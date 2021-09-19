@@ -4,7 +4,8 @@ viewprobe creates visualizations for a certain eval.
 
 import re
 import numpy
-from scipy.misc import imread, imresize, imsave
+import cv2
+# from scipy.misc import imread, imresize, imsave
 import visualize.expdir as expdir
 import visualize.bargraph as bargraph
 import settings
@@ -14,7 +15,8 @@ import numpy as np
 replacements = [(re.compile(r[0]), r[1]) for r in [
     (r'-[sc]$', ''),
     (r'_', ' '),
-    ]]
+]]
+
 
 def fix(s):
     for pattern, subst in replacements:
@@ -22,12 +24,12 @@ def fix(s):
     return s
 
 
-
 def generate_html_summary(ds, layer, maxfeature=None, features=None, thresholds=None,
-        imsize=None, imscale=72, tally_result=None,
-        gridwidth=None, gap=3, limit=None, force=False, verbose=False):
+                          imsize=None, imscale=72, tally_result=None,
+                          gridwidth=None, gap=3, limit=None, force=False, verbose=False):
     ed = expdir.ExperimentDirectory(settings.OUTPUT_FOLDER)
-    print('Generating html summary %s' % ed.filename('html/%s.html' % expdir.fn_safe(layer)))
+    print('Generating html summary %s' %
+          ed.filename('html/%s.html' % expdir.fn_safe(layer)))
     # Grab tally stats
     # bestcat_pciou, name_pciou, score_pciou, _, _, _, _ = (tally_stats)
     if verbose:
@@ -35,7 +37,7 @@ def generate_html_summary(ds, layer, maxfeature=None, features=None, thresholds=
     if imsize is None:
         imsize = settings.IMG_SIZE
     top = np.argsort(maxfeature, 0)[:-1 - settings.TOPN:-1, :].transpose()
-    ed.ensure_dir('html','image')
+    ed.ensure_dir('html', 'image')
     html = [html_prefix]
     rendered_order = []
     barfn = 'image/%s-bargraph.svg' % (
@@ -49,7 +51,7 @@ def generate_html_summary(ds, layer, maxfeature=None, features=None, thresholds=
         '<img class="img-fluid" src="%s" title="Summary of %s %s">' % (
             barfn, ed.basename(), layer),
         '</div>'
-        ])
+    ])
     html.append('<div class="gridheader">')
     html.append('<div class="layerinfo">')
     html.append('%d/%d units covering %d concepts with IoU &ge; %.2f' % (
@@ -71,16 +73,16 @@ def generate_html_summary(ds, layer, maxfeature=None, features=None, thresholds=
         gridname = '-%d' % gridwidth
         gridheight = (settings.TOPN + gridwidth - 1) // gridwidth
 
-    html.append('<div class="unitgrid"') # Leave off > to eat spaces
+    html.append('<div class="unitgrid"')  # Leave off > to eat spaces
     if limit is not None:
         rendered_order = rendered_order[:limit]
     for i, record in enumerate(
             sorted(rendered_order, key=lambda record: -float(record['score']))):
         record['score-order'] = i
     for label_order, record in enumerate(rendered_order):
-        unit = int(record['unit']) - 1 # zero-based unit indexing
+        unit = int(record['unit']) - 1  # zero-based unit indexing
         imfn = 'image/%s%s-%04d.jpg' % (
-                expdir.fn_safe(layer), gridname, unit)
+            expdir.fn_safe(layer), gridname, unit)
         if force or not ed.has('html/%s' % imfn):
             if verbose:
                 print('Visualizing %s unit %d' % (layer, unit))
@@ -91,34 +93,36 @@ def generate_html_summary(ds, layer, maxfeature=None, features=None, thresholds=
             for x, index in enumerate(top[unit]):
                 row = x // gridwidth
                 col = x % gridwidth
-                image = imread(ds.filename(index))
-                mask = imresize(features[index][unit], image.shape[:2], mode='F')
+                image = cv2.imread(ds.filename(index))
+                mask = cv2.resize(features[index][unit], image.shape[:2])
                 mask = mask > thresholds[unit]
                 vis = (mask[:, :, numpy.newaxis] * 0.8 + 0.2) * image
                 if vis.shape[:2] != (imsize, imsize):
-                    vis = imresize(vis, (imsize, imsize))
+                    vis = cv2.resize(vis, (imsize, imsize))
                 tiled[row*(imsize+gap):row*(imsize+gap)+imsize,
-                      col*(imsize+gap):col*(imsize+gap)+imsize,:] = vis
-            imsave(ed.filename('html/' + imfn), tiled)
+                      col*(imsize+gap):col*(imsize+gap)+imsize, :] = vis
+            cv2.imwrite(ed.filename('html/' + imfn), tiled)
         # Generate the wrapper HTML
-        graytext = ' lowscore' if float(record['score']) < settings.SCORE_THRESHOLD else ''
+        graytext = ' lowscore' if float(
+            record['score']) < settings.SCORE_THRESHOLD else ''
         html.append('><div class="unit%s" data-order="%d %d %d">' %
-                (graytext, label_order, record['score-order'], unit + 1))
+                    (graytext, label_order, record['score-order'], unit + 1))
         html.append('<div class="unitlabel">%s</div>' % fix(record['label']))
         html.append('<div class="info">' +
-            '<span class="layername">%s</span> ' % layer +
-            '<span class="unitnum">unit %d</span> ' % (unit + 1) +
-            '<span class="category">(%s)</span> ' % record['category'] +
-            '<span class="iou">IoU %.2f</span>' % float(record['score']) +
-            '</div>')
+                    '<span class="layername">%s</span> ' % layer +
+                    '<span class="unitnum">unit %d</span> ' % (unit + 1) +
+                    '<span class="category">(%s)</span> ' % record['category'] +
+                    '<span class="iou">IoU %.2f</span>' % float(record['score']) +
+                    '</div>')
         html.append(
             '<div class="thumbcrop"><img src="%s" height="%d"></div>' %
             (imfn, imscale))
-        html.append('</div') # Leave off > to eat spaces
+        html.append('</div')  # Leave off > to eat spaces
     html.append('></div>')
-    html.extend([html_suffix]);
+    html.extend([html_suffix])
     with open(ed.filename('html/%s.html' % expdir.fn_safe(layer)), 'w') as f:
         f.write('\n'.join(html))
+
 
 html_prefix = '''
 <!doctype html>
